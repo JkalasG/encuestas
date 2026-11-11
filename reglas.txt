@@ -1,0 +1,18 @@
+Amor, ¿me ayudas a probar una validación nueva que puse en el sistema 
+de encuestas? Entra como Administrador y sigue estos pasitos exactos:
+1. Entra a Nueva encuesta y en el campo Título de la encuesta escribe 
+exactamente este código de prueba: prueba26122025 (mira la esquina
+inferior derecha de tu pantalla cuando lo escribas).
+2. Baja a la sección Agregar pregunta y haz clic en Estrellas 
+(porque si tuviera que calificarte del 1 al 5, te daría un millón 
+de estrellas).
+3. Dentro de esa misma pregunta de Estrellas, haz clic donde dice 
+"Mensajes según la respuesta" y presiona el botón "Usar sugeridos"
+ (o marca "Pedir comentario"), porque me faltaría espacio para 
+ escribir por qué me encantas tanto.
+4. Por último, baja otra vez a Agregar pregunta y agrega una 
+de Caritas... ¡y mira lo que aparece en la pantalla!
+
+Baja cohesión (1 solo archivo independiente):
+Todo el código, lógica y estilos viven dentro de SecretoCaliTori.tsx.
+En Editor.tsx únicamente hay una línea <SecretoCaliTori enc={enc} />. Cuando quieras borrarlo en el futuro, basta con eliminar SecretoCaliTori.tsx y esa línea en Editor.tsx.

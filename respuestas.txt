@@ -1,0 +1,14 @@
+1. deja todas esas opciones cabe recarcar que si son 5 caritas entonces la primera vale 2 la otra 4 etc etc
+2. ya te dije antes
+3. inicia con usuario y contrasena ademas de inicio de sesion con cuenta gooogle
+4. mmm que si pueda ser de forma anonima pero que tenga en el creador solicitar nombre o empresa o campos de este tipo
+5. si pero que sea configurable igual en caso de que tenga fecha limite que le aparesca con un reloj de tiempo al usuario los enlaces que sean personalizables desde el creador 
+6. si que pueda responder varias veces
+7. te dije que sea opcional a configurar en el creador
+8. como es pequena la base de datos que sea sqlite
+9. si ponle los graficos para el analisis de cada pregunta
+10. si me parece
+11. es espanol el idioma usa los colores adecuados para este tipo de encuestas es para satisfaccion del cliente
+
+algo a aclara quiero que sea lo mas optimo posible que las preguntas aparescan de forma fluida que no se trabe etec etc 
+
