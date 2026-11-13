@@ -9,6 +9,11 @@ services:
     restart: unless-stopped
     ports:
       - "${PORT:-3000}:3000"
+    # Variables de Gmail (GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, SENDER_ALIAS, SENDER_NAME)
+    # se leen de backend/.env. Lo de "environment" tiene prioridad si se repite.
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -18,11 +23,14 @@ services:
       - ADMIN_EMAIL=${ADMIN_EMAIL:-sgc@agencia-vilaseca.com}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-EPSIUQzurc.97}
       - MODO_ESPECIAL=${MODO_ESPECIAL:-true}
-      # Correos con la API de Gmail (etiqueta encuestas-CaliTori)
-      - GMAIL_CLIENT_ID=${GMAIL_CLIENT_ID:-}
-      - GMAIL_CLIENT_SECRET=${GMAIL_CLIENT_SECRET:-}
-      - GMAIL_REFRESH_TOKEN=${GMAIL_REFRESH_TOKEN:-}
-      - SENDER_ALIAS=${SENDER_ALIAS:-}
-      - SENDER_NAME=${SENDER_NAME:-CaliTori}
     volumes:
       - ./backend/data:/app/backend/data
+      - ./backend/credentials:/app/backend/credentials:ro
+
+    networks:
+      - red-agencia
+
+networks:
+  red-agencia:
+    external: true
+    name: docker_red-agencia
