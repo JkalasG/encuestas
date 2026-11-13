@@ -1,8 +1,8 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Hourglass, Send, Timer } from 'lucide-react';
-import { AUTO_AVANZA, Entrada, estaRespondida, PanelSeguimiento, seguimientoDe } from './Inputs';
+import { ArrowLeft, ArrowRight, ExternalLink, Hourglass, Send, Timer } from 'lucide-react';
+import { AUTO_AVANZA, Entrada, estaRespondida, faltaComentario, PanelSeguimiento, seguimientoDe } from './Inputs';
 import { Emoji } from './Emoji';
-import { claveComentario, type EncuestaPublica } from '../types';
+import { claveComentario, esSeccion, rellenarDatos, type EncuestaPublica } from '../types';
 
 const logoImg = '/logo.png';
 
@@ -54,6 +54,7 @@ export default function Runner({ encuesta, enviar, preview }: Props) {
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const transTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const n = preguntas.length;
+  const totalPreg = preguntas.filter((x) => !esSeccion(x)).length;
 
   useEffect(() => () => {
     clearTimeout(timer.current);
@@ -126,7 +127,7 @@ export default function Runner({ encuesta, enviar, preview }: Props) {
         <div className="acciones">
           <button className="btn primary lg" disabled={faltan} onClick={() => ir(1)}>Comenzar <ArrowRight size={18} /></button>
         </div>
-        <p className="muted center">{n} {n === 1 ? 'pregunta' : 'preguntas'} · menos de {Math.max(1, Math.ceil(n / 3))} min</p>
+        <p className="muted center">{totalPreg} {totalPreg === 1 ? 'pregunta' : 'preguntas'} · menos de {Math.max(1, Math.ceil(totalPreg / 3))} min</p>
       </section>
     );
   }
@@ -136,7 +137,7 @@ export default function Runner({ encuesta, enviar, preview }: Props) {
     return (
       <div className={`runner-msg paso ${animClase}`} key="fin">
         <div className="big"><Emoji n="fiesta" size={72} /></div>
-        <h2>{encuesta.mensajeFinal || '¡Gracias por tu opinión!'}</h2>
+        <h2>{rellenarDatos(encuesta.mensajeFinal || '¡Gracias por tu opinión!', camposCliente, cli, !!preview)}</h2>
         {preview ? <button className="btn ghost" onClick={() => { setResp({}); ir(0); }}>Reiniciar vista previa</button>
           : <p className="muted">Ya puedes cerrar esta ventana.</p>}
       </div>
@@ -146,7 +147,9 @@ export default function Runner({ encuesta, enviar, preview }: Props) {
   // ---- pregunta ----
   const p = preguntas[paso - 1];
   const v = resp[p.id];
-  const ok = !p.obligatoria || estaRespondida(p, v);
+  const seccion = esSeccion(p);
+  const numero = preguntas.slice(0, paso).filter((x) => !esSeccion(x)).length;
+  const ok = seccion || ((!p.obligatoria || estaRespondida(p, v)) && !faltaComentario(p, v, resp[claveComentario(p.id)]));
   const ultima = paso === n;
 
   const cambiar = (val: any) => {
@@ -168,11 +171,27 @@ export default function Runner({ encuesta, enviar, preview }: Props) {
         <i style={{ width: `${((paso - 1) / n) * 100}%` }} />
       </div>
       <section className={`paso ${animClase}`} key={p.id}>
-        <p className="contador">Pregunta {paso} de {n}</p>
-        <h2 className="pregunta">{p.texto}{p.obligatoria && <em title="Obligatoria"> *</em>}</h2>
-        <div className="respuesta"><Entrada p={p} value={v} onChange={cambiar} /></div>
-        <PanelSeguimiento p={p} value={v} comentario={resp[claveComentario(p.id)] || ''}
-          onComentario={(t) => setResp((s) => ({ ...s, [claveComentario(p.id)]: t }))} />
+        {seccion ? (
+          <div className="seccion-card">
+            {p.imagen && <img className="seccion-img" src={p.imagen} alt={p.titulo || ''} loading="lazy" />}
+            {p.titulo && <h2 className="pregunta seccion-titulo">{p.titulo}</h2>}
+            {p.descripcion && <p className="seccion-desc">{p.descripcion}</p>}
+            {p.enlace && (
+              <a className="btn seccion-enlace" href={p.enlace} target="_blank" rel="noopener noreferrer">
+                <ExternalLink size={16} /> {p.enlaceTexto || 'Abrir enlace'}
+              </a>
+            )}
+          </div>
+        ) : (
+          <>
+            <p className="contador">Pregunta {numero} de {totalPreg}</p>
+            {p.titulo && <h3 className="pregunta-titulo">{p.titulo}</h3>}
+            <h2 className="pregunta">{p.texto}{p.obligatoria && <em title="Obligatoria"> *</em>}</h2>
+            <div className="respuesta"><Entrada p={p} value={v} onChange={cambiar} /></div>
+            <PanelSeguimiento p={p} value={v} comentario={resp[claveComentario(p.id)] || ''}
+              onComentario={(t) => setResp((s) => ({ ...s, [claveComentario(p.id)]: t }))} />
+          </>
+        )}
         {error && <p className="error">{error}</p>}
         <div className="acciones entre">
           <button className="btn ghost" onClick={() => { clearTimeout(timer.current); ir(paso - 1); }}><ArrowLeft size={18} /> Atrás</button>
@@ -180,7 +199,7 @@ export default function Runner({ encuesta, enviar, preview }: Props) {
             <button className="btn primary lg" disabled={!ok || enviando} onClick={enviarTodo}>{enviando ? 'Enviando…' : <><Send size={18} /> Enviar respuestas</>}</button>
           ) : (
             <button className="btn primary" disabled={!ok} onClick={() => { clearTimeout(timer.current); ir(paso + 1); }}>
-              {!p.obligatoria && !estaRespondida(p, v) ? 'Omitir' : 'Siguiente'} <ArrowRight size={18} />
+              {seccion ? 'Continuar' : !p.obligatoria && !estaRespondida(p, v) ? 'Omitir' : 'Siguiente'} <ArrowRight size={18} />
             </button>
           )}
         </div>

@@ -1,8 +1,9 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import {
-  AlertCircle, ArrowDown, ArrowUp, Check, Eye, Monitor, Palette, Plus, Save, Smartphone, Sparkles, Trash2, X
+  AlertCircle, ArrowDown, ArrowUp, Check, Eye, ImagePlus, LayoutTemplate, Mail, Monitor, Palette, Plus, Save, Settings,
+  Smartphone, Sparkles, Trash2, X
 } from 'lucide-react';
 import { Emoji } from '../components/Emoji';
 import { Entrada, PanelSeguimiento } from '../components/Inputs';
@@ -10,15 +11,17 @@ import Runner from '../components/Runner';
 import SecretoCaliTori from '../components/SecretoCaliTori';
 import { ToastContainer, type ToastNotif } from '../components/Toast';
 import {
-  ADMITE_SEGUIMIENTO, CARITAS, FONDOS_PRESET, generarVariablesTema, NIVELES, nivelesSeguimiento,
-  PALETAS_PRESET, TEMAS_PRESET, sugeridos, TIPOS_INFO, uid, type Campo, type Encuesta, type Pregunta,
+  ADMITE_SEGUIMIENTO, ASUNTO_CLIENTE_DEFECTO, CARITAS, columnasMatriz, COLUMNAS_MATRIZ_DEFECTO, esSeccion, ETIQUETA_GMAIL,
+  FONDOS_PRESET, MENSAJE_CLIENTE_DEFECTO, generarVariablesTema, NIVELES, nivelesSeguimiento,
+  PALETAS_PRESET, rellenarDatos, TEMAS_PRESET, sugeridos, TIPOS_INFO, uid, type Campo, type Configuracion, type Encuesta, type Pregunta,
   type Seguimiento, type TemaEncuesta, type TipoPregunta,
 } from '../types';
 import { urlPublica } from './Encuestas';
 
 const vacia = (): Encuesta => ({
   titulo: '', descripcion: '', mensajeFinal: '¡Gracias por tu opinión!', preguntas: [], camposCliente: [],
-  fechaLimite: null, maxRespuestas: null,
+  fechaLimite: null, maxRespuestas: null, 
+  configuracion: { avisarAdmin: true, confirmarCliente: false },
   tema: { colorPrimario: '#2563eb', fondo: 'degradado', estiloBordes: 'redondeado' },
 });
 
@@ -40,6 +43,77 @@ const aLocal = (iso: string | null) => {
   const d = new Date(iso);
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 };
+
+/** Reduce la imagen subida (máx. 900 px, JPEG) para guardarla dentro de la encuesta. */
+function comprimirImagen(file: File): Promise<string> {
+  return new Promise((ok, fallo) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 900 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * k);
+      c.height = Math.round(img.height * k);
+      const g = c.getContext('2d')!;
+      g.fillStyle = '#fff';
+      g.fillRect(0, 0, c.width, c.height);
+      g.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      const out = c.toDataURL('image/jpeg', 0.82);
+      if (out.length > 560_000) fallo(new Error('La imagen es demasiado pesada, usa una más pequeña'));
+      else ok(out);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); fallo(new Error('No se pudo leer la imagen')); };
+    img.src = url;
+  });
+}
+
+/** Editor de una tarjeta de sección (título, descripción, imagen y/o enlace; todo opcional). */
+const EditorSeccion = memo(function EditorSeccion({ q, i, total, vacia, onChange, onMove, onRemove, onError }: {
+  q: Pregunta; i: number; total: number; vacia: boolean;
+  onChange: (id: string, c: Partial<Pregunta>) => void; onMove: (i: number, d: number) => void; onRemove: (id: string) => void;
+  onError: (m: string) => void;
+}) {
+  const subir = async (f?: File) => {
+    if (!f) return;
+    try { onChange(q.id, { imagen: await comprimirImagen(f) }); } catch (e: any) { onError(e.message); }
+  };
+  return (
+    <div className={`card q-edit seccion-edit ${vacia ? 'card-error' : ''}`} id={`pregunta-${q.id}`}>
+      <div className="q-head">
+        <span className="q-tipo"><LayoutTemplate size={15} /> Sección</span>
+        <span className="spacer" />
+        <button className="btn sm ghost" disabled={i === 0} onClick={() => onMove(i, -1)} aria-label="Subir"><ArrowUp size={16} /></button>
+        <button className="btn sm ghost" disabled={i === total - 1} onClick={() => onMove(i, 1)} aria-label="Bajar"><ArrowDown size={16} /></button>
+        <button className="btn sm ghost danger" onClick={() => onRemove(q.id)} aria-label="Eliminar"><Trash2 size={16} /></button>
+      </div>
+      <p className="muted sm">Tarjeta informativa entre preguntas. Completa solo lo que necesites: título, descripción, imagen o enlace.</p>
+      <label className="campo"><span>Título</span>
+        <input id={`input-pregunta-${q.id}`} className="input" maxLength={200} value={q.titulo || ''} placeholder="Ej: Sobre nuestro servicio de transporte"
+          onChange={(e) => onChange(q.id, { titulo: e.target.value })} /></label>
+      <label className="campo"><span>Descripción</span>
+        <textarea className="input" rows={3} maxLength={1500} value={q.descripcion || ''} onChange={(e) => onChange(q.id, { descripcion: e.target.value })} /></label>
+      <div className="campo">
+        <span>Imagen</span>
+        {q.imagen && <img className="seccion-img-prev" src={q.imagen} alt="" />}
+        <div className="row">
+          <input className="input" placeholder="Pega la dirección (URL) de una imagen" value={q.imagen?.startsWith('data:') ? '' : q.imagen || ''}
+            onChange={(e) => onChange(q.id, { imagen: e.target.value.trim() })} />
+          <label className="btn sm"><ImagePlus size={15} /> Subir
+            <input type="file" accept="image/*" hidden onChange={(e) => { subir(e.target.files?.[0]); e.target.value = ''; }} /></label>
+          {q.imagen && <button className="btn sm ghost danger" onClick={() => onChange(q.id, { imagen: '' })}><Trash2 size={14} /> Quitar</button>}
+        </div>
+      </div>
+      <div className="dos">
+        <label className="campo"><span>Enlace (https://…)</span>
+          <input className="input" maxLength={600} value={q.enlace || ''} placeholder="https://" onChange={(e) => onChange(q.id, { enlace: e.target.value.trim() })} /></label>
+        <label className="campo"><span>Texto del botón del enlace</span>
+          <input className="input" maxLength={80} value={q.enlaceTexto || ''} placeholder="Abrir enlace" onChange={(e) => onChange(q.id, { enlaceTexto: e.target.value })} /></label>
+      </div>
+      {vacia && <span className="campo-error-msg"><AlertCircle size={14} /> Agrega al menos un título, descripción, imagen o enlace</span>}
+    </div>
+  );
+});
 
 /** Muestra el componente real de la pregunta, para ir viendo cómo queda. */
 const VistaPregunta = memo(function VistaPregunta({ q, tema }: { q: Pregunta; tema?: TemaEncuesta }) {
@@ -149,6 +223,15 @@ const EditorSeguimiento = memo(function EditorSeguimiento({ q, onChange }: { q: 
               <label className="check-row" title="Muestra una caja para que el cliente escriba">
                 <input type="checkbox" checked={!!seg[nv.clave]?.comentario} onChange={(e) => poner(nv.clave, { comentario: e.target.checked })} /> Pedir comentario
               </label>
+              {seg[nv.clave]?.comentario && (
+                <div className="seg-extra">
+                  <label className="check-row">
+                    <input type="checkbox" checked={!!seg[nv.clave]?.comentarioObligatorio} onChange={(e) => poner(nv.clave, { comentarioObligatorio: e.target.checked })} /> Obligatorio
+                  </label>
+                  <input className="input" maxLength={120} placeholder={seg[nv.clave]?.comentarioObligatorio ? 'Texto de la caja: Cuéntanos más…' : 'Texto de la caja: Cuéntanos más (opcional)…'}
+                    value={seg[nv.clave]?.placeholder || ''} onChange={(e) => poner(nv.clave, { placeholder: e.target.value })} />
+                </div>
+              )}
             </div>
           ))
         )}
@@ -161,8 +244,8 @@ const EditorSeguimiento = memo(function EditorSeguimiento({ q, onChange }: { q: 
   );
 });
 
-const EditorPregunta = memo(function EditorPregunta({ q, i, total, tema, campoError, onChange, onMove, onRemove, onLimpiarError }: {
-  q: Pregunta; i: number; total: number; tema?: TemaEncuesta; campoError?: string | null;
+const EditorPregunta = memo(function EditorPregunta({ q, i, num, total, tema, campoError, onChange, onMove, onRemove, onLimpiarError }: {
+  q: Pregunta; i: number; num: number; total: number; tema?: TemaEncuesta; campoError?: string | null;
   onChange: (id: string, c: Partial<Pregunta>) => void; onMove: (i: number, d: number) => void; onRemove: (id: string) => void;
   onLimpiarError?: () => void;
 }) {
@@ -201,8 +284,15 @@ const EditorPregunta = memo(function EditorPregunta({ q, i, total, tema, campoEr
         <button className="btn sm ghost" disabled={i === total - 1} onClick={() => onMove(i, 1)} aria-label="Bajar"><ArrowDown size={16} /></button>
         <button className="btn sm ghost danger" onClick={() => onRemove(q.id)} aria-label="Eliminar"><Trash2 size={16} /></button>
       </div>
+      <label className="check-row">
+        <input type="checkbox" checked={q.titulo !== undefined} onChange={(e) => onChange(q.id, { titulo: e.target.checked ? '' : undefined })} /> Agregar título sobre la pregunta
+      </label>
+      {q.titulo !== undefined && (
+        <input className="input" value={q.titulo} maxLength={120} placeholder="Ej: Atención al cliente" autoFocus
+          onChange={(e) => onChange(q.id, { titulo: e.target.value })} />
+      )}
       <label className="campo">
-        <span>Pregunta {i + 1} *</span>
+        <span>Pregunta {num} *</span>
         <input
           id={`input-pregunta-${q.id}`}
           className={`input ${tieneErrorTexto ? 'input-error' : ''}`}
@@ -220,6 +310,31 @@ const EditorPregunta = memo(function EditorPregunta({ q, i, total, tema, campoEr
       </label>
       {(q.tipo === 'unica' || q.tipo === 'multiple') && lista('opciones', 'Opciones', tieneErrorOpciones)}
       {q.tipo === 'matriz' && lista('filas', 'Aspectos a calificar', tieneErrorFilas)}
+      {q.tipo === 'matriz' && (
+        <div className="campo">
+          <span>Títulos de las columnas <small className="muted">(de más a menos satisfecho; cada una lleva su carita)</small></span>
+          <div className="cols-matriz">
+            {columnasMatriz(q).map((c, k) => (
+              <label key={k} className="col-matriz">
+                <Emoji n={CARITAS[4 - k]} size={30} />
+                <input className="input" maxLength={40} value={q.columnas?.[k] ?? COLUMNAS_MATRIZ_DEFECTO[k]} placeholder={COLUMNAS_MATRIZ_DEFECTO[k]}
+                  onChange={(e) => {
+                    const a = COLUMNAS_MATRIZ_DEFECTO.map((d, x) => q.columnas?.[x] ?? d);
+                    a[k] = e.target.value;
+                    onChange(q.id, { columnas: a });
+                  }} />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+      {q.tipo === 'texto' && (
+        <label className="campo">
+          <span>Texto de ayuda dentro de la caja <small className="muted">(opcional)</small></span>
+          <input className="input" maxLength={120} value={q.placeholder || ''} placeholder="Escribe aquí tu comentario…"
+            onChange={(e) => onChange(q.id, { placeholder: e.target.value })} />
+        </label>
+      )}
       <label className="check-row"><input type="checkbox" checked={q.obligatoria} onChange={(e) => onChange(q.id, { obligatoria: e.target.checked })} /> Respuesta obligatoria</label>
       <VistaPregunta q={q} tema={tema} />
       {ADMITE_SEGUIMIENTO.has(q.tipo) && <EditorSeguimiento q={q} onChange={onChange} />}
@@ -238,6 +353,7 @@ export default function Editor() {
   const [campoError, setCampoError] = useState<string | null>(null);
   const [vista, setVista] = useState(false);
   const [modalApariencia, setModalApariencia] = useState(false);
+  const [modalConfig, setModalConfig] = useState(false);
   const [dispositivoPreview, setDispositivoPreview] = useState<'movil' | 'escritorio'>('movil');
 
   const notificar = (titulo: string, mensaje: string, tipo: 'error' | 'aviso' | 'exito' = 'error') => {
@@ -278,7 +394,37 @@ export default function Editor() {
   const mover = useCallback((i: number, d: number) => setEnc((s) => {
     const a = [...s.preguntas]; [a[i], a[i + d]] = [a[i + d], a[i]]; return { ...s, preguntas: a };
   }), []);
+  const insertarSeccion = (pos: number) => setEnc((s) => {
+    const a = [...s.preguntas];
+    a.splice(pos, 0, nueva('seccion'));
+    return { ...s, preguntas: a };
+  });
   const quitar = useCallback((pid: string) => setEnc((s) => ({ ...s, preguntas: s.preguntas.filter((p) => p.id !== pid) })), []);
+
+  const setConfig = (c: Partial<Configuracion>) =>
+    setEnc((s) => ({ ...s, configuracion: { avisarAdmin: false, confirmarCliente: false, ...s.configuracion, ...c } }));
+  const camposCorreo = enc.camposCliente.filter((c) => c.tipo === 'email');
+  const areaMensaje = useRef<HTMLTextAreaElement>(null);
+  /** Inserta un {dato} en el mensaje del correo al cliente, donde esté el cursor. */
+  const insertarEnMensaje = (t: string) => {
+    const actual = enc.configuracion?.mensajeCliente ?? MENSAJE_CLIENTE_DEFECTO;
+    const el = areaMensaje.current;
+    const a = el?.selectionStart ?? actual.length;
+    const b = el?.selectionEnd ?? a;
+    setConfig({ mensajeCliente: (actual.slice(0, a) + t + actual.slice(b)).slice(0, 1500) });
+    requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(a + t.length, a + t.length); });
+  };
+  const inputFinal = useRef<HTMLInputElement>(null);
+  /** Inserta {Etiqueta} en el mensaje final, donde esté el cursor. */
+  const insertarDato = (etiqueta: string) => {
+    const el = inputFinal.current;
+    const t = `{${etiqueta.trim()}}`;
+    const a = el?.selectionStart ?? enc.mensajeFinal.length;
+    const b = el?.selectionEnd ?? a;
+    const nuevo = (enc.mensajeFinal.slice(0, a) + t + enc.mensajeFinal.slice(b)).slice(0, 300);
+    set('mensajeFinal', nuevo);
+    requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(a + t.length, a + t.length); });
+  };
 
   const tieneCampo = (et: string) => enc.camposCliente.some((c) => c.etiqueta === et);
   const alternarPreset = (p: Omit<Campo, 'id'>) =>
@@ -298,7 +444,7 @@ export default function Editor() {
     }
 
     // 2. Validar que tenga al menos una pregunta
-    if (!enc.preguntas.length) {
+    if (!enc.preguntas.some((p) => !esSeccion(p))) {
       setCampoError('preguntas');
       notificar('Faltan preguntas', 'Agrega al menos una pregunta para poder guardar la encuesta');
       const el = document.getElementById('sec-agregar-pregunta');
@@ -311,6 +457,17 @@ export default function Editor() {
     // 3. Validar texto de cada pregunta y opciones si corresponde
     for (let i = 0; i < enc.preguntas.length; i++) {
       const q = enc.preguntas[i];
+      if (esSeccion(q)) {
+        const mal = !q.titulo?.trim() && !q.descripcion?.trim() && !q.imagen && !q.enlace?.trim();
+        const malEnlace = !!q.enlace?.trim() && !/^https?:\/\/\S+$/i.test(q.enlace.trim());
+        if (mal || malEnlace) {
+          setCampoError(`seccion-${q.id}`);
+          notificar(`Sección ${i + 1}`, mal ? 'Agrega un título, descripción, imagen o enlace, o elimina la sección' : 'El enlace debe empezar con http:// o https://');
+          document.getElementById(`pregunta-${q.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
+        continue;
+      }
       if (!q.texto.trim()) {
         setCampoError(`pregunta-${q.id}`);
         notificar(`Pregunta ${i + 1} incompleta`, 'Escribe el texto de la pregunta antes de guardar');
@@ -370,6 +527,7 @@ export default function Editor() {
     setGuardando(true);
     try {
       const body = { ...enc, slug: slug.trim() };
+      if (body.configuracion?.confirmarCliente && !camposCorreo.length) body.configuracion = { ...body.configuracion, confirmarCliente: false };
       await api(id ? `/encuestas/${id}` : '/encuestas', { method: id ? 'PUT' : 'POST', body });
       nav('/encuestas');
     } catch (e: any) {
@@ -380,14 +538,15 @@ export default function Editor() {
 
   const previa = useMemo(() => ({
     ...enc,
-    preguntas: enc.preguntas.map((p) => ({
+    preguntas: enc.preguntas.map((p) => esSeccion(p) ? p : ({
       ...p,
       texto: p.texto || '(sin texto)',
       opciones: p.opciones?.filter((o) => o.trim()),
       filas: p.filas?.filter((o) => o.trim()),
     })),
   }), [enc]);
-  const previaOk = enc.preguntas.length > 0;
+  const previaOk = enc.preguntas.some((p) => !esSeccion(p));
+  const nPreguntas = enc.preguntas.filter((p) => !esSeccion(p)).length;
 
   if (cargando) return <div className="center-screen"><div className="spinner" /></div>;
 
@@ -396,7 +555,6 @@ export default function Editor() {
   return (
     <>
       <ToastContainer toasts={toasts} onDismiss={quitarToast} />
-      <SecretoCaliTori enc={enc} setEnc={setEnc} />
 
       <div className="editor-head-sticky">
         <div className="editor-head-info">
@@ -407,6 +565,10 @@ export default function Editor() {
           <button type="button" className="btn btn-apariencia" onClick={() => setModalApariencia(true)}>
             <Palette size={17} /> <span>Apariencia</span>
             <span className="tema-dot-badge" style={{ backgroundColor: enc.tema?.colorPrimario || '#2563eb' }} />
+          </button>
+          <button type="button" className="btn btn-apariencia" onClick={() => setModalConfig(true)}>
+            <Settings size={17} /> <span>Configuración</span>
+            {(enc.configuracion?.avisarAdmin || enc.configuracion?.confirmarCliente) && <span className="tema-dot-badge" style={{ backgroundColor: '#16a34a' }} />}
           </button>
           <button type="button" className="btn" disabled={!previaOk} onClick={() => setVista(true)}>
             <Eye size={17} /> <span>Vista previa</span>
@@ -444,8 +606,20 @@ export default function Editor() {
         </label>
         <label className="campo">
           <span>Mensaje al terminar</span>
-          <input className="input" value={enc.mensajeFinal} maxLength={300} onChange={(e) => set('mensajeFinal', e.target.value)} />
+          <input ref={inputFinal} className="input" value={enc.mensajeFinal} maxLength={300} onChange={(e) => set('mensajeFinal', e.target.value)} />
         </label>
+        {enc.camposCliente.some((c) => c.etiqueta.trim()) && (
+          <div className="campo">
+            <span className="muted sm">Poner un dato del cliente dentro del mensaje (ej.: “¡Gracias, {'{Nombre}'}!”):</span>
+            <div className="chips">
+              {enc.camposCliente.filter((c) => c.etiqueta.trim()).map((c) => (
+                <button type="button" key={c.id} className="chip" onClick={() => insertarDato(c.etiqueta)}>
+                  <Plus size={14} /> {c.etiqueta}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="card sec">
@@ -494,21 +668,43 @@ export default function Editor() {
         ))}
       </div>
 
-      <h3 className="sec-title">Preguntas ({enc.preguntas.length})</h3>
+      <h3 className="sec-title">Preguntas ({nPreguntas}){enc.preguntas.length > nPreguntas && ` · ${enc.preguntas.length - nPreguntas} ${enc.preguntas.length - nPreguntas === 1 ? 'sección' : 'secciones'}`}</h3>
       {enc.preguntas.map((q, i) => (
-        <EditorPregunta
-          key={q.id}
-          q={q}
-          i={i}
-          total={enc.preguntas.length}
-          tema={enc.tema}
-          campoError={campoError}
-          onChange={cambiarP}
-          onMove={mover}
-          onRemove={quitar}
-          onLimpiarError={() => setCampoError(null)}
-        />
+        <div key={q.id}>
+          {(
+            <button type="button" className="insertar-seccion" onClick={() => insertarSeccion(i)}>
+              <Plus size={13} /> Insertar sección aquí
+            </button>
+          )}
+          {esSeccion(q) ? (
+            <EditorSeccion
+              q={q} i={i} total={enc.preguntas.length} vacia={campoError === `seccion-${q.id}`}
+              onChange={(pid, c) => { if (campoError === `seccion-${q.id}`) setCampoError(null); cambiarP(pid, c); }}
+              onMove={mover} onRemove={quitar} onError={(m) => notificar('Imagen', m)}
+            />
+          ) : (
+            <EditorPregunta
+              q={q}
+              i={i}
+              num={enc.preguntas.slice(0, i + 1).filter((x) => !esSeccion(x)).length}
+              total={enc.preguntas.length}
+              tema={enc.tema}
+              campoError={campoError}
+              onChange={cambiarP}
+              onMove={mover}
+              onRemove={quitar}
+              onLimpiarError={() => setCampoError(null)}
+            />
+          )}
+        </div>
       ))}
+      {enc.preguntas.length > 0 && (
+        <button type="button" className="insertar-seccion" onClick={() => insertarSeccion(enc.preguntas.length)}>
+          <Plus size={13} /> Insertar sección aquí
+        </button>
+      )}
+
+      <SecretoCaliTori enc={enc} setEnc={setEnc} />
 
       <div className={`card sec ${campoError === 'preguntas' ? 'sec-error-pulse' : ''}`} id="sec-agregar-pregunta">
         <div className="sec-header-row">
@@ -520,7 +716,7 @@ export default function Editor() {
           )}
         </div>
         <div className="tipos">
-          {(Object.keys(TIPOS_INFO) as TipoPregunta[]).map((t) => (
+          {(Object.keys(TIPOS_INFO) as TipoPregunta[]).filter((t) => t !== 'seccion').map((t) => (
             <button
               key={t}
               className="tipo"
@@ -539,12 +735,16 @@ export default function Editor() {
 
       <div className="editor-bottom-bar card">
         <div className="editor-bottom-info muted">
-          <span>{enc.preguntas.length} {enc.preguntas.length === 1 ? 'pregunta configurada' : 'preguntas configuradas'}</span>
+          <span>{nPreguntas} {nPreguntas === 1 ? 'pregunta configurada' : 'preguntas configuradas'}</span>
         </div>
         <div className="editor-head-actions">
           <button type="button" className="btn btn-apariencia" onClick={() => setModalApariencia(true)}>
             <Palette size={17} /> <span>Apariencia</span>
             <span className="tema-dot-badge" style={{ backgroundColor: enc.tema?.colorPrimario || '#2563eb' }} />
+          </button>
+          <button type="button" className="btn btn-apariencia" onClick={() => setModalConfig(true)}>
+            <Settings size={17} /> <span>Configuración</span>
+            {(enc.configuracion?.avisarAdmin || enc.configuracion?.confirmarCliente) && <span className="tema-dot-badge" style={{ backgroundColor: '#16a34a' }} />}
           </button>
           <button type="button" className="btn" disabled={!previaOk} onClick={() => setVista(true)}>
             <Eye size={17} /> <span>Vista previa</span>
@@ -554,6 +754,74 @@ export default function Editor() {
           </button>
         </div>
       </div>
+
+      {modalConfig && (
+        <div className="modal" onClick={() => setModalConfig(false)}>
+          <div className="modal-card modal-config" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-top">
+              <div className="modal-top-title">
+                <div className="modal-top-ico"><Settings size={22} /></div>
+                <div>
+                  <b>Configuración</b>
+                  <p className="muted sm">Correos automáticos al recibir una respuesta. Se envían con Gmail y llevan la etiqueta <b>{ETIQUETA_GMAIL}</b>.</p>
+                </div>
+              </div>
+              <button type="button" className="btn sm primary" onClick={() => setModalConfig(false)}><Check size={16} /> Listo</button>
+            </div>
+
+            <div className="cfg-seccion">
+              <label className="check-row cfg-check">
+                <input type="checkbox" checked={!!enc.configuracion?.avisarAdmin} onChange={(e) => setConfig({ avisarAdmin: e.target.checked })} />
+                <span><b><Mail size={15} /> Avisarme cuando alguien responda</b></span>
+              </label>
+              <p className="muted sm">Recibes en el correo de tu cuenta un resumen con los datos del cliente y todas sus respuestas.</p>
+            </div>
+
+            <div className="cfg-seccion">
+              <label className={'check-row cfg-check' + (camposCorreo.length ? '' : ' disabled')}>
+                <input type="checkbox" disabled={!camposCorreo.length} checked={!!enc.configuracion?.confirmarCliente && camposCorreo.length > 0}
+                  onChange={(e) => setConfig({ confirmarCliente: e.target.checked })} />
+                <span><b><Mail size={15} /> Enviar correo de agradecimiento al cliente</b></span>
+              </label>
+              {!camposCorreo.length ? (
+                <p className="aviso-cfg"><AlertCircle size={15} /> Para activarlo, agrega el dato <b>Correo</b> en “Datos del cliente”. Así sabemos a dónde enviarlo.</p>
+              ) : enc.configuracion?.confirmarCliente && (
+                <>
+                  {camposCorreo.length > 1 && (
+                    <label className="campo"><span>Enviar al correo de</span>
+                      <select className="input" value={enc.configuracion?.campoCorreoId || camposCorreo[0].id} onChange={(e) => setConfig({ campoCorreoId: e.target.value })}>
+                        {camposCorreo.map((c) => <option key={c.id} value={c.id}>{c.etiqueta}</option>)}
+                      </select></label>
+                  )}
+                  <label className="campo"><span>Asunto</span>
+                    <input className="input" maxLength={150} value={enc.configuracion?.asuntoCliente ?? ASUNTO_CLIENTE_DEFECTO} onChange={(e) => setConfig({ asuntoCliente: e.target.value })} /></label>
+                  <label className="campo"><span>Mensaje</span>
+                    <textarea ref={areaMensaje} className="input" rows={5} maxLength={1500} value={enc.configuracion?.mensajeCliente ?? MENSAJE_CLIENTE_DEFECTO} onChange={(e) => setConfig({ mensajeCliente: e.target.value })} /></label>
+                  <p className="muted sm">Escribe el mensaje completo, saludo incluido. Usa <code>{'{encuesta}'}</code> para el título y <code>{'{Etiqueta}'}</code> para cualquier dato que el cliente llene (ej. <code>{'{Nombre}'}</code>):</p>
+                  <div className="chips">
+                    {enc.camposCliente.filter((c) => c.etiqueta.trim()).map((c) => (
+                      <button type="button" key={c.id} className="chip" onClick={() => insertarEnMensaje(`{${c.etiqueta.trim()}}`)}><Plus size={14} /> {c.etiqueta}</button>
+                    ))}
+                    <button type="button" className="chip" onClick={() => insertarEnMensaje('{encuesta}')}><Plus size={14} /> Título de la encuesta</button>
+                  </div>
+                  <div className="correo-prev">
+                    <p className="muted sm"><b>Así llegará el correo</b> (con datos de ejemplo)</p>
+                    <div className="correo-meta"><span>Asunto:</span> {enc.configuracion?.asuntoCliente || ASUNTO_CLIENTE_DEFECTO}</div>
+                    <div className="correo-marco">
+                      <div className="correo-cab">{enc.titulo || 'Título de la encuesta'}</div>
+                      <div className="correo-cuerpo">
+                        <p>{rellenarDatos((enc.configuracion?.mensajeCliente ?? MENSAJE_CLIENTE_DEFECTO).replace(/\{encuesta\}/gi, enc.titulo || 'Título de la encuesta'), enc.camposCliente, {}, true)}</p>
+                        <small>Mensaje automático por Agencia Vilaseca. Por favor no respondas a este correo.</small>
+                      </div>
+                    </div>
+                  </div>
+                  <button type="button" className="btn sm ghost" onClick={() => setConfig({ asuntoCliente: ASUNTO_CLIENTE_DEFECTO, mensajeCliente: MENSAJE_CLIENTE_DEFECTO })}>Restablecer mensaje por defecto</button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Apariencia en 2 Columnas con Vista Previa en Vivo */}
       {modalApariencia && (

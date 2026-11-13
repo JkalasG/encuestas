@@ -25,7 +25,7 @@ export default function Respuestas() {
           <Link key={e.id} to={`/respuestas/${e.id}`} className="card enc link-card">
             <h3>{e.titulo}</h3>
             <div className="kpi"><b>{e.respuestas}</b><span>{e.respuestas === 1 ? 'respuesta' : 'respuestas'}</span></div>
-            <p className="muted">/s/{e.slug} · {e.preguntas.length} preguntas</p>
+            <p className="muted">/s/{e.slug} · {e.preguntas.filter((p) => p.tipo !== 'seccion').length} preguntas</p>
             <span className="ver">Ver análisis <ArrowRight size={16} /></span>
           </Link>
         ))}

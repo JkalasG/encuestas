@@ -9,12 +9,20 @@ services:
     restart: unless-stopped
     ports:
       - "${PORT:-3000}:3000"
-    env_file:
-      - ./backend/.env
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - JWT_SECRET=${JWT_SECRET:-vilaseca-calitori-secreto-produccion-2025}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - REGISTRO_ABIERTO=false
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-sgc@agencia-vilaseca.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-EPSIUQzurc.97}
       - MODO_ESPECIAL=${MODO_ESPECIAL:-true}
+      # Correos con la API de Gmail (etiqueta encuestas-CaliTori)
+      - GMAIL_CLIENT_ID=${GMAIL_CLIENT_ID:-}
+      - GMAIL_CLIENT_SECRET=${GMAIL_CLIENT_SECRET:-}
+      - GMAIL_REFRESH_TOKEN=${GMAIL_REFRESH_TOKEN:-}
+      - SENDER_ALIAS=${SENDER_ALIAS:-}
+      - SENDER_NAME=${SENDER_NAME:-CaliTori}
     volumes:
       - ./backend/data:/app/backend/data
-

@@ -7,6 +7,7 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.useBodyParser('json', { limit: '4mb' }); // imagenes de secciones
   app.setGlobalPrefix('api');
   app.enableCors();
   app.getHttpAdapter().getInstance().set('trust proxy', 1);

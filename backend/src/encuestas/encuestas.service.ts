@@ -3,13 +3,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as ExcelJS from 'exceljs';
 import { Repository } from 'typeorm';
 import { Registro } from '../registro.entity';
+import { ASUNTO_CLIENTE_DEFECTO, CorreoService } from './correo.service';
 import {
   calcularResumen, claveComentario, normalizarSlug, sanitizarEncuesta, slugAleatorio, slugValido, validarRespuesta,
 } from './encuestas.logic';
 
 @Injectable()
 export class EncuestasService {
-  constructor(@InjectRepository(Registro) private repo: Repository<Registro>) { }
+  constructor(@InjectRepository(Registro) private repo: Repository<Registro>, private correo: CorreoService) { }
 
   // ---------- helpers ----------
   private async propia(id: string, usuarioId: string) {
@@ -125,7 +126,7 @@ export class EncuestasService {
       { header: 'Fecha', key: 'fecha', width: 20 },
       ...d.camposCliente.map((c: any) => ({ header: c.etiqueta, key: 'c_' + c.id, width: 22 })),
     ];
-    for (const q of d.preguntas) {
+    for (const q of d.preguntas.filter((x: any) => x.tipo !== 'seccion')) {
       if (q.tipo === 'matriz') q.filas.forEach((f: string, i: number) => cols.push({ header: `${q.texto} -${f}`, key: `q_${q.id}_${i}`, width: 24 }));
       else {
         cols.push({ header: q.texto, key: 'q_' + q.id, width: 26 });
@@ -137,7 +138,7 @@ export class EncuestasService {
     filas.forEach((f, i) => {
       const row: any = { n: i + 1, fecha: f.creadoEn };
       for (const c of d.camposCliente) row['c_' + c.id] = f.datos?.respondiente?.[c.id] ?? '';
-      for (const q of d.preguntas) {
+      for (const q of d.preguntas.filter((x: any) => x.tipo !== 'seccion')) {
         const v = f.datos?.respuestas?.[q.id];
         if (q.tipo === 'matriz') q.filas.forEach((fila: string, i2: number) => (row[`q_${q.id}_${i2}`] = v?.[fila] ?? ''));
         else {
@@ -192,6 +193,27 @@ export class EncuestasService {
     if (est !== 'abierta') throw new BadRequestException('Esta encuesta ya no recibe respuestas');
     const datos = validarRespuesta(e.datos, body);
     await this.repo.save(this.repo.create({ tipo: 'respuesta', padreId: e.id, datos, activo: true }));
+    this.notificar(e, datos, total + 1).catch(() => undefined); // no retrasa ni rompe la respuesta
     return { ok: true, mensaje: e.datos.mensajeFinal };
+  }
+
+  /** Correo al administrador y/o confirmacion al cliente, segun la configuracion de la encuesta. */
+  private async notificar(e: Registro, datos: any, total: number) {
+    const cfg = e.datos.configuracion || {};
+    if (!cfg.avisarAdmin && !cfg.confirmarCliente) return;
+    const enc = { titulo: e.nombre, preguntas: e.datos.preguntas, camposCliente: e.datos.camposCliente };
+
+    if (cfg.avisarAdmin) {
+      const admin = await this.repo.findOne({ where: { id: e.padreId, tipo: 'usuario' } });
+      if (admin?.llave) await this.correo.enviar(admin.llave, `Nueva respuesta: ${e.nombre}`, this.correo.htmlAdmin(enc, datos, total));
+    }
+    if (cfg.confirmarCliente) {
+      const campos: any[] = e.datos.camposCliente || [];
+      const campo = campos.find((c) => c.id === cfg.campoCorreoId) || campos.find((c) => c.tipo === 'email');
+      const destino = campo && datos.respondiente?.[campo.id];
+      if (destino) {
+        await this.correo.enviar(destino, cfg.asuntoCliente || ASUNTO_CLIENTE_DEFECTO, this.correo.htmlCliente(cfg.mensajeCliente, e.nombre, campos, datos.respondiente || {}));
+      }
+    }
   }
 }

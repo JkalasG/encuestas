@@ -2,7 +2,7 @@ import { memo, useState } from 'react';
 import { Check, Star } from 'lucide-react';
 import { Emoji } from './Emoji';
 import {
-  ADMITE_SEGUIMIENTO, CARITAS, claveSeguimiento, colorValor, ETIQUETAS_NIVEL, NIVELES, type Pregunta,
+  ADMITE_SEGUIMIENTO, CARITAS, claveSeguimiento, colorValor, columnasMatriz, ETIQUETAS_NIVEL, NIVELES, type Pregunta,
 } from '../types';
 
 interface P { p: Pregunta; value: any; onChange: (v: any) => void }
@@ -105,13 +105,18 @@ const Matriz = memo(function Matriz({ p, value, onChange }: P) {
       <div className="matriz">
         <div className="matriz-head">
           <span />
-          {ETIQUETAS_NIVEL.slice().reverse().map((e) => <small key={e}>{e}</small>)}
+          {columnasMatriz(p).map((e, i) => (
+            <span className="matriz-col" key={i}>
+              <Emoji n={CARITAS[4 - i]} size={26} className="matriz-emoji" />
+              <small>{e}</small>
+            </span>
+          ))}
         </div>
         {p.filas!.map((f) => (
           <div className="matriz-fila" key={f}>
             <span className="matriz-nombre">{f}</span>
             {NIVELES.slice().reverse().map((n, i) => (
-              <button type="button" key={n} aria-label={`${f}: ${ETIQUETAS_NIVEL[4 - i]}`} title={ETIQUETAS_NIVEL[4 - i]}
+              <button type="button" key={n} aria-label={`${f}: ${columnasMatriz(p)[i]}`} title={columnasMatriz(p)[i]}
                 className={'matriz-c' + (v[f] === n ? ' on' : '')}
                 style={v[f] === n ? { background: colorValor(n), borderColor: colorValor(n) } : undefined}
                 onClick={() => onChange({ ...v, [f]: n })} />
@@ -123,8 +128,8 @@ const Matriz = memo(function Matriz({ p, value, onChange }: P) {
   );
 });
 
-const Texto = memo(function Texto({ value, onChange }: Omit<P, 'p'>) {
-  return <textarea className="input" rows={4} maxLength={2000} placeholder="Escribe aquí tu comentario…" value={value || ''} onChange={(e) => onChange(e.target.value)} />;
+const Texto = memo(function Texto({ p, value, onChange }: P) {
+  return <textarea className="input" rows={4} maxLength={2000} placeholder={p.placeholder?.trim() || 'Escribe aquí tu comentario…'} value={value || ''} onChange={(e) => onChange(e.target.value)} />;
 });
 
 export function Entrada({ p, value, onChange }: P) {
@@ -135,7 +140,7 @@ export function Entrada({ p, value, onChange }: P) {
     case 'unica': return <Unica p={p} value={value} onChange={onChange} />;
     case 'multiple': return <Multiple p={p} value={value} onChange={onChange} />;
     case 'matriz': return <Matriz p={p} value={value} onChange={onChange} />;
-    default: return <Texto value={value} onChange={onChange} />;
+    default: return <Texto p={p} value={value} onChange={onChange} />;
   }
 }
 
@@ -163,7 +168,9 @@ export function PanelSeguimiento({ p, value, comentario, onComentario }: {
     <div className="seguimiento" key={key}>
       {s.mensaje && <p className="seg-msg">{s.mensaje}</p>}
       {s.comentario && (
-        <textarea className="input" rows={2} maxLength={1000} placeholder="Cuéntanos más (opcional)…"
+        <textarea className="input" rows={2} maxLength={1000}
+          placeholder={s.placeholder?.trim() || (s.comentarioObligatorio ? 'Cuéntanos más…' : 'Cuéntanos más (opcional)…')}
+          required={!!s.comentarioObligatorio}
           value={comentario} onChange={(e) => onComentario(e.target.value)} />
       )}
     </div>
@@ -172,6 +179,12 @@ export function PanelSeguimiento({ p, value, comentario, onComentario }: {
 
 /** Tipos que avanzan solos al elegir (si el valor no tiene mensaje de seguimiento). */
 export const AUTO_AVANZA = new Set(['escala', 'caritas', 'estrellas', 'unica']);
+
+/** True si el valor elegido pide un comentario obligatorio y aún está vacío. */
+export function faltaComentario(p: Pregunta, v: any, comentario?: string) {
+  const s = seguimientoDe(p, v);
+  return !!(s?.comentario && s.comentarioObligatorio && !(comentario || '').trim());
+}
 
 export function estaRespondida(p: Pregunta, v: any) {
   if (v === undefined || v === null || v === '') return false;

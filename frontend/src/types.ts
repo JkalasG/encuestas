@@ -1,16 +1,20 @@
 import {
   Building2, CircleDot, Droplets, Grid3x3, Hash, Leaf, ListChecks, MessageSquareText, Moon, Palette,
-  SlidersHorizontal, SmilePlus, Sparkles, Star, Sun, Sunrise, Waves, type LucideIcon
+  LayoutTemplate, SlidersHorizontal, SmilePlus, Sparkles, Star, Sun, Sunrise, Waves, type LucideIcon
 } from 'lucide-react';
 import type { NombreEmoji } from './emojis';
 
-export type TipoPregunta = 'escala' | 'caritas' | 'estrellas' | 'unica' | 'multiple' | 'matriz' | 'texto';
+export type TipoPregunta = 'escala' | 'caritas' | 'estrellas' | 'unica' | 'multiple' | 'matriz' | 'texto' | 'seccion';
 
 /** Mensaje opcional que aparece según lo que responda el cliente. */
 export interface Seguimiento {
   mensaje: string;
   /** Si es true, además del mensaje se muestra una caja para que el cliente escriba. */
   comentario: boolean;
+  /** Si es true, el cliente debe escribir el comentario para continuar. */
+  comentarioObligatorio?: boolean;
+  /** Texto de ayuda de la caja de comentario. */
+  placeholder?: string;
 }
 
 export interface RangosEscala {
@@ -22,7 +26,18 @@ export interface Pregunta {
   id: string;
   tipo: TipoPregunta;
   texto: string;
+  /** Título opcional que se muestra encima de la pregunta. */
+  titulo?: string;
   obligatoria: boolean;
+  /** Texto de ayuda de la caja (tipo texto libre). */
+  placeholder?: string;
+  /** Matriz: títulos de las 5 columnas, de "muy satisfecho" a "muy insatisfecho". */
+  columnas?: string[];
+  /** Sección: contenido opcional. */
+  descripcion?: string;
+  imagen?: string;
+  enlace?: string;
+  enlaceTexto?: string;
   opciones?: string[];
   filas?: string[];
   rangosEscala?: RangosEscala;
@@ -35,6 +50,19 @@ export interface Campo {
   tipo: 'texto' | 'email' | 'telefono';
   obligatorio: boolean;
 }
+export interface Configuracion {
+  /** Avisar por correo al creador de la encuesta cuando alguien responde. */
+  avisarAdmin: boolean;
+  /** Enviar un correo de agradecimiento al cliente (requiere un dato de tipo correo). */
+  confirmarCliente: boolean;
+  campoCorreoId?: string;
+  asuntoCliente?: string;
+  mensajeCliente?: string;
+}
+export const ASUNTO_CLIENTE_DEFECTO = 'Gracias por responder nuestra encuesta';
+export const MENSAJE_CLIENTE_DEFECTO = 'Hola {nombre},\n\nGracias por haber llenado la encuesta «{encuesta}». Tu opinión es muy valiosa y nos ayuda a mejorar cada día.';
+export const ETIQUETA_GMAIL = 'Encuestas Vilaseca';
+
 export type EstiloFondo = 'degradado' | 'burbujas' | 'ondas' | 'puntos' | 'lineas' | 'aurora' | 'claro' | 'oscuro' | 'calido' | 'menta';
 export type EstiloBordes = 'redondeado' | 'suave' | 'recto';
 export type EstiloTarjeta = 'solido' | 'vidrio' | 'plano';
@@ -55,6 +83,7 @@ export interface Encuesta {
   mensajeFinal: string;
   preguntas: Pregunta[];
   camposCliente: Campo[];
+  configuracion?: Configuracion;
   fechaLimite: string | null;
   maxRespuestas: number | null;
   tema?: TemaEncuesta;
@@ -148,6 +177,12 @@ export function generarVariablesTema(color?: string): Record<string, string> {
 /** 5 niveles (caritas/estrellas/matriz) equivalentes a 2,4,6,8,10 en la escala 1-10. */
 export const NIVELES = [2, 4, 6, 8, 10];
 export const CARITAS: NombreEmoji[] = ['llora', 'triste', 'neutral', 'feliz', 'encantado'];
+export const esSeccion = (p: { tipo: TipoPregunta }) => p.tipo === 'seccion';
+/** Columnas de la matriz tal como se muestran: de "Muy satisfecho" a "Muy insatisfecho". */
+export const COLUMNAS_MATRIZ_DEFECTO = ['Muy satisfecho', 'Satisfecho', 'Neutral', 'Insatisfecho', 'Muy insatisfecho'];
+export const columnasMatriz = (p: { columnas?: string[] }) =>
+  COLUMNAS_MATRIZ_DEFECTO.map((d, i) => p.columnas?.[i]?.trim() || d);
+
 export const ETIQUETAS_NIVEL = ['Muy insatisfecho', 'Insatisfecho', 'Neutral', 'Satisfecho', 'Muy satisfecho'];
 
 /** Color de 1 a 10: rojo → amarillo → verde. */
@@ -165,6 +200,7 @@ export const TIPOS_INFO: Record<TipoPregunta, { nombre: string; Icono: LucideIco
   multiple: { nombre: 'Opción múltiple', Icono: ListChecks, desc: 'El cliente puede elegir varias.' },
   matriz: { nombre: 'Matriz', Icono: Grid3x3, desc: 'Varios aspectos calificados de satisfecho a insatisfecho.' },
   texto: { nombre: 'Texto libre', Icono: MessageSquareText, desc: 'Comentarios y sugerencias abiertas.' },
+  seccion: { nombre: 'Sección', Icono: LayoutTemplate, desc: 'Tarjeta con título, texto, imagen o enlace entre preguntas.' },
 };
 
 /** Tipos que admiten mensajes según la respuesta. */
@@ -239,5 +275,19 @@ export function sugeridos(t: TipoPregunta): Record<string, Seguimiento> {
 
 /** Clave donde se guarda el comentario de seguimiento dentro de `respuestas`. */
 export const claveComentario = (id: string) => `${id}__c`;
+
+/** Reemplaza {Etiqueta} por el dato que el cliente llenó al inicio (si no lo llenó, lo quita). */
+export function rellenarDatos(texto: string, campos: Campo[], valores: Record<string, string>, ejemplo = false) {
+  return texto
+    .replace(/\{([^{}]{1,60})\}/g, (m, nombre: string) => {
+      const c = campos.find((x) => x.etiqueta.trim().toLowerCase() === nombre.trim().toLowerCase());
+      if (!c) return m;
+      const v = valores[c.id]?.trim();
+      return v || (ejemplo ? `[${c.etiqueta}]` : '');
+    })
+    .replace(/\s+([,.!?;:])/g, '$1')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
 
 export const uid = () => Math.random().toString(36).slice(2, 10);
