@@ -66,12 +66,24 @@ export class CorreoService {
     }
   }
 
+  private miCorreoCache: string | null = null;
+  private async miCorreo(c: OAuth2Client): Promise<string | null> {
+    if (this.miCorreoCache) return this.miCorreoCache;
+    try {
+      const r: any = await c.request({ url: `${GMAIL}/profile` });
+      return (this.miCorreoCache = r.data.emailAddress || null);
+    } catch {
+      return null;
+    }
+  }
+
   async enviar(para: string, asunto: string, html: string): Promise<boolean> {
     const c = this.auth();
     if (!c) return false;
     try {
-      const alias = process.env.SENDER_ALIAS;
-      const nombre = sinSaltos(process.env.SENDER_NAME || 'CaliTori').replace(/"/g, '');
+      // Sin SENDER_ALIAS se usa la propia cuenta autorizada, para poder poner el nombre del remitente.
+      const alias = process.env.SENDER_ALIAS || (await this.miCorreo(c));
+      const nombre = sinSaltos(process.env.SENDER_NAME || 'Encuestas Vilaseca').replace(/"/g, '');
       const mensaje = [
         ...(alias ? [`From: "${nombre}" <${alias}>`] : []),
         `To: ${sinSaltos(para)}`,
